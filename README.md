@@ -228,4 +228,15 @@ That approach *does* work, however, if you already implemented your vTPM when in
 
 ### Attempt 3: VEK extraction
 The values on the TPM are encrypted with a key fused to the TPM chip and unique, so you cannot extract the `VEK` from the TPM.  
-I do want to emphasize the `VEK` is used bit Bitlocker, and therefore resides in RAM (after unsealing). Therefore, things like [DMA attacks](https://en.wikipedia.org/wiki/DMA_attack) on Bitlocker do work, but using DMA attacks commonly requires physical access to a device so I will consider it out-of-scope for this blogpost.
+I do want to emphasize the `VEK` is used bit Bitlocker, and therefore resides in RAM (after unsealing). Therefore, things like [DMA attacks](https://en.wikipedia.org/wiki/DMA_attack) on Bitlocker do work (under some circumstances), but using DMA attacks commonly requires physical access to a device so I will consider it out-of-scope for this blogpost.
+
+### When bootkits do work?
+Bootkits might work if running them does not change the `PCR` values. For example, if you found a vulnerability in the Windows bootloader itself that allows you to run arbitrary code due to a memory corruption, then your Bootkit might also bypass Bitlocker.
+
+## Summary
+I hope I was able to explain in this blogpost why even a Bookit is not the end of all things (it is still severe though!).  
+By a clever use of basic cryptogaphic principles (symmetric encryption and hash functions) modern systems get secure even in the face of Bootkits.
+
+Stay tuned!
+
+Jonathan Bar Or

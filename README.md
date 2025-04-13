@@ -41,3 +41,14 @@ The buffers supplied to the `TPM_Extend` function we have just introduced depend
 - Measurements for Secure Boot (e.g. `KEK`, `DB` and `DBX`) are extneded into `PCR7`.
 - Lastly, `PCR8 - PCR15` might be used freely by the OS. On Windows, drivers and boot-time services are extended into those, by the Windows Boot manager.
 
+UEFI uses TCG2 API as such:
+
+```c
+EFI_STATUS
+HashLogExtendEvent(
+  IN EFI_TCG2_PROTOCOL*    This,
+  IN EFI_PHYSICAL_ADDRESS  DataToHash,
+  IN UINT64                DataLength,
+  IN EFI_TCG2_EVENT*       EfiTcgEvent
+);
+```

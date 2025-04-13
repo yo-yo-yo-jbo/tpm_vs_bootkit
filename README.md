@@ -52,3 +52,148 @@ HashLogExtendEvent(
   IN EFI_TCG2_EVENT*       EfiTcgEvent
 );
 ```
+
+Note the API gets the buffer *as is* (`DataToHash` and `DataLength`) rather than getting a hash - it does the hashing itself.
+
+### Sealing and unsealing
+One incredible ability TPM has is the ability to perform *sealing* and *unsealing* of secrets and tie that to PCR values.  
+Here is an example that shows how it's done:
+
+```c
+// Required headers
+#include <tss2/tss2_esys.h>
+#include <tss2/tss2_mu.h>
+#include <string.h>
+#include <stdio.h>
+
+void seal_data(ESYS_CONTEXT *esys_ctx)
+{
+    TSS2_RC rc;
+    ESYS_TR session = ESYS_TR_NONE;
+    ESYS_TR primary_handle = ESYS_TR_NONE;
+    ESYS_TR sealed_obj_handle = ESYS_TR_NONE;
+    TPM2B_PUBLIC *out_public = NULL;
+    TPM2B_PRIVATE *out_private = NULL;
+
+    // Start a policy session
+    rc = Esys_StartAuthSession(esys_ctx, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE, NULL, NULL, TPM2_SE_POLICY, TPM2_ALG_SHA256, TPM2_ALG_SHA256, &session);
+
+    // Build PCR selection (bind to PCR 7)
+    TPML_PCR_SELECTION pcr_selection = {
+        .count = 1,
+        .pcrSelections = {
+            {
+                .hash = TPM2_ALG_SHA256,
+                .sizeofSelect = 3,
+                .pcrSelect = {0, 0, 0x80}  // PCR 7
+            }
+        }
+    };
+
+    // Call TPM2_PolicyPCR to bind the session to current PCR[7]
+    rc = Esys_PolicyPCR(esys_ctx, session, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE, NULL, &pcr_selection);
+
+    // Get the resulting policy digest
+    TPM2B_DIGEST *policy_digest = NULL;
+    rc = Esys_PolicyGetDigest(esys_ctx, session, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE, &policy_digest);
+
+    // Set up object templates
+    TPM2B_SENSITIVE_CREATE inSensitive = {
+        .size = 0,
+        .sensitive = {
+            .userAuth = {.size = 0},
+            .data = {.size = 6, .buffer = "SECRET"}
+        }
+    };
+
+    TPM2B_PUBLIC inPublic = {
+        .size = 0,
+        .publicArea = {
+            .type = TPM2_ALG_KEYEDHASH,
+            .nameAlg = TPM2_ALG_SHA256,
+            .objectAttributes = TPMA_OBJECT_FIXEDTPM | TPMA_OBJECT_FIXEDPARENT |
+                                TPMA_OBJECT_USERWITHAUTH | TPMA_OBJECT_ADMINWITHPOLICY,
+            .authPolicy = *policy_digest,
+            .parameters.keyedHashDetail = {
+                .scheme.scheme = TPM2_ALG_NULL,
+            },
+            .unique.keyedHash.size = 0,
+        }
+    };
+
+    // Create primary key under the owner hierarchy
+    rc = Esys_CreatePrimary(esys_ctx, ESYS_TR_RH_OWNER, ESYS_TR_PASSWORD, ESYS_TR_NONE,
+        ESYS_TR_NONE, &inSensitive, &inPublic, NULL, NULL, &primary_handle,
+        NULL, NULL, NULL, NULL);
+
+    // Create the sealed object under the primary key
+    rc = Esys_Create(esys_ctx, primary_handle, ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
+        &inSensitive, &inPublic, NULL, NULL, &out_private, &out_public, NULL, NULL, NULL);
+
+    // Done with session
+    Esys_FlushContext(esys_ctx, session);
+}
+```
+
+Let's follow the concepts of this code:
+1. We call `Esys_StartAuthSession` to create a session.
+2. We define a `TPML_PCR_SELECTION` structure that defines the PCR values we are interested of binding the sealing with. In our case we chose PCR7, which corresponds to the value `0x80` (it's a bitmask). Of course, we could bind it to multiple PCR values.
+3. We call `Esys_PolicyPCR` to declare that data structure (the PCR selection) and bind that to the session we created.
+4. We generate a structure of type `TPM2B_SENSITIVE_CREATE` which will contain the secret buffer in it (the buffer we are going to seal).
+5. We create a *primary key* with `Esys_CreatePrimary` for the particular secret. There is a hierarchy associated with public keys but we won't do a deep dive here.
+6. We create a sealed object under that primary key using `Esys_Create`.
+
+To unseal, we do the following:
+
+```c
+void unseal_data(ESYS_CONTEXT *esys_ctx, ESYS_TR parent_handle,
+                 TPM2B_PRIVATE *in_private, TPM2B_PUBLIC *in_public) {
+    TSS2_RC rc;
+    ESYS_TR session = ESYS_TR_NONE;
+    ESYS_TR sealed_handle = ESYS_TR_NONE;
+
+    // Load the object under the primary key
+    rc = Esys_Load(esys_ctx, parent_handle, ESYS_TR_PASSWORD, ESYS_TR_NONE, ESYS_TR_NONE,
+        in_private, in_public, &sealed_handle);
+
+    // Start a policy session
+    rc = Esys_StartAuthSession(esys_ctx, ESYS_TR_NONE, ESYS_TR_NONE,
+        ESYS_TR_NONE, NULL, NULL,
+        TPM2_SE_POLICY, TPM2_ALG_SHA256, TPM2_ALG_SHA256, &session);
+
+    // Re-bind to PCR 7 (must match the PCR state at sealing time)
+    TPML_PCR_SELECTION pcr_selection = {
+        .count = 1,
+        .pcrSelections = {
+            {
+                .hash = TPM2_ALG_SHA256,
+                .sizeofSelect = 3,
+                .pcrSelect = {0, 0, 0x80}
+            }
+        }
+    };
+
+    rc = Esys_PolicyPCR(esys_ctx, session, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+        NULL, &pcr_selection);
+
+    // Now unseal the data
+    TPM2B_SENSITIVE_DATA *out_data = NULL;
+    rc = Esys_Unseal(esys_ctx, sealed_handle, session, ESYS_TR_NONE, ESYS_TR_NONE, &out_data);
+
+    if (rc == TSS2_RC_SUCCESS) {
+        printf("Unsealed data: %.*s\n", out_data->size, out_data->buffer);
+    } else {
+        printf("Unseal failed: 0x%x\n", rc);
+    }
+
+    // Cleanup
+    Esys_FlushContext(esys_ctx, session);
+    Esys_FlushContext(esys_ctx, sealed_handle);
+}
+```
+
+1. Note we've done similar first steps - we have created a session, defined a PCR selection structure and perform a binding using `Esys_PolicyPCR`.
+2. Now we call `Esys_Unseal` to unseal the data. The most important thing is this - *unsealing fails if the PCR selection and the values themselves mismatch*.
+
+That is a very powerful thing - this means unsealing data now is tightly bound to the boot order, configuration, and generally - buffers controlled by the firmware.  
+We'll see how Bitlocker uses that.

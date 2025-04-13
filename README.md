@@ -28,7 +28,7 @@ PCRs are addressed by their number, such as "PCR 0", "PCR1" and so on. Here are 
 Those PCR values initially get the value of 0, and then *extended* with TPM functionality - imagine the TPM exposes an API that looks like this:
 
 ```
-PCRn = TPM_Extend(PCRn, hash(buffer))
+PCRn = TPM_Extend(PCRn, buffer) = hash(PCRn, || hash(buffer))
 ```
 
 This lets one create a *rolling hash* similar to how blockchain hashes look like. Since hash functions are (supposedly) one-way, supplying even one "wrong" bit to a buffer completely changes the future PCR values.  

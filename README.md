@@ -9,9 +9,9 @@ At its core, the TPM can generate and protect cryptographic keys, securely store
 These capabilities make the TPM a foundational element in modern operating system security features, including BitLocker, which relies on the TPM to protect encryption keys and ensure the system has not been tampered with prior to boot.
 
 ### PCRs
-One of the most important aspect of the TPM is the concept of Platform Configuration Registers (PCRs).  
-Those are registers that hold the digest of a hash function (e.g. SHA1 or SHA256), thus quite long compared to normal CPU registers.  
-PCRs are addressed by their number, such as "PCR 0", "PCR1" and so on. Here are common PCR numbers and how they're used:
+One of the most important aspect of the TPM is the concept of `Platform Configuration Registers (PCRs).`  
+Those are registers that hold the digest of a hash function (e.g. [SHA1](https://en.wikipedia.org/wiki/SHA-1) or [SHA256](https://en.wikipedia.org/wiki/SHA-2)), thus quite long compared to normal CPU general purpose registers.  
+PCRs are addressed by their number, such as `PCR 0`, `PCR1` and so on. Here are common `PCR` numbers and how they're used:
 
 | Number(s) | PCR Purpose                             |
 | --------- | --------------------------------------- |
@@ -25,7 +25,7 @@ PCRs are addressed by their number, such as "PCR 0", "PCR1" and so on. Here are 
 | 7	        | Secure Boot policy                      |
 | 8–15	    | OS-specific drivers and applications    |
 
-Those PCR values initially get the value of 0, and then *extended* with TPM functionality - imagine the TPM exposes an API that looks like this:
+Those `PCR` values initially get the value of 0, and then *extended* with TPM functionality - imagine the TPM exposes an API that looks like this:
 
 ```
 PCRn = TPM_Extend(PCRn, buffer) = hash(PCRn, || hash(buffer))
@@ -138,8 +138,8 @@ void seal_data(ESYS_CONTEXT *esys_ctx)
 
 Let's follow the concepts of this code:
 1. We call `Esys_StartAuthSession` to create a session.
-2. We define a `TPML_PCR_SELECTION` structure that defines the PCR values we are interested of binding the sealing with. In our case we chose PCR7, which corresponds to the value `0x80` (it's a bitmask). Of course, we could bind it to multiple PCR values.
-3. We call `Esys_PolicyPCR` to declare that data structure (the PCR selection) and bind that to the session we created.
+2. We define a `TPML_PCR_SELECTION` structure that defines the `PCR` values we are interested of binding the sealing with. In our case we chose `PCR7`, which corresponds to the value `0x80` (it's a bitmask). Of course, we could bind it to multiple `PCR` values.
+3. We call `Esys_PolicyPCR` to declare that data structure (the `PCR` selection) and bind that to the session we created.
 4. We generate a structure of type `TPM2B_SENSITIVE_CREATE` which will contain the secret buffer in it (the buffer we are going to seal).
 5. We create a *primary key* with `Esys_CreatePrimary` for the particular secret. There is a hierarchy associated with public keys but we won't do a deep dive here.
 6. We create a sealed object under that primary key using `Esys_Create`.
@@ -218,12 +218,12 @@ The conclusion is that my Bootkit does *not* beat Bitlocker, which is a good thi
 At this point, you might have some ideas on how to bypass those restrictions. Here are some common ones and why they do not work:
 
 ### Attempt 1: replaying the PCR values
-One idea you might have is straight-forward - we might have intimate knowledge about the boot process and the buffers extneded in each PCR value, so, we could perform the same calculation and get to the "desired" PCR values!  
-While that approah makes a lot of sense, it doesn't work because there are no known ways of resetting the PCR values back to zero without power-cycling the TPM, which in principle cannot be done without a CPU reboot.  
-There are some interesting nuances about Windows hibernation and S3 sleep mode: when coming back from hibernation, there is a way to set the PCR values to a specific values, but it can only be done *once* - TPM will block further attempts to do so until the next time it power-cycles or goes to sleep mode.
+One idea you might have is straight-forward - we might have intimate knowledge about the boot process and the buffers extneded in each `PCR` value, so, we could perform the same calculation and get to the "desired" PCR values!  
+While that approah makes a lot of sense, it doesn't work because there are no known ways of resetting the `PCR` values back to zero without power-cycling the TPM, which in principle cannot be done without a CPU reboot.  
+There are some interesting nuances about Windows hibernation and S3 sleep mode: when coming back from hibernation, there is a way to set the `PCR` values to a specific values, but it can only be done *once* - TPM will block further attempts to do so until the next time it power-cycles or goes to sleep mode.
 
 ### Attempt 2: vTPM
-One other idea would be fooling Windows enough and implement a TPM in software. That works in a sense that you can set arbitrary PCR values, but since your software TPM doesn't have the `VEK` or any secret, this fails.  
+One other idea would be fooling Windows enough and implement a TPM in software. That works in a sense that you can set arbitrary `PCR` values, but since your software TPM doesn't have the `VEK` or any secret, this fails.  
 That approach *does* work, however, if you already implemented your vTPM when installing Bitlocker itself, which is a huge assumption (and an overkill anyway - there are easier ways to achieve the same effect, e.g. just saving the plaintext `VEK` somewhere).
 
 ### Attempt 3: VEK extraction

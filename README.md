@@ -202,4 +202,30 @@ We'll see how Bitlocker uses that!
 ### Bitlocker and sealing
 [Bitlocker](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/) uses something called `VEK`, which stands for `Volume Encryption Key`.  
 It is a symmetric [AES key](https://github.com/yo-yo-yo-jbo/crypto_terminology/) used by BitLocker to actually encrypt and decrypt sectors on the disk.  
-Each BitLocker-encrypted volume has its own `VEK` and it's different on every machine. The magic? It's *sealed* in the TPM!
+Each BitLocker-encrypted volume has its own `VEK` and it's different on every machine. The magic? It's *sealed* in the TPM!  
+In practice, Bitlocker uses `PCR0`, `PCR2`, `PCR4`, `PCR7` and `PCR11` for PCR-context sealing.
+
+## Why does my Bootkit fail?
+My own Bootkit relied on vulnerabilities in `GRUB2`, which means that on Windows, my strategy would be a bit convoluted:
+1. Replace the Windows bootloader with a Shim that calls `GRUB2`. Note that due to Secure Boot this is a necessary step since I cannot run arbitrary code yet.
+2. Exploit one of the vulnerabilities I discovered. Successful exploitation lets me run arbitrary code at this point.
+3. Perform the steps I mentioned in my [previous blogpost](https://github.com/yo-yo-yo-jbo/bootkit_anatomy/), starting with patching the UEFI services.
+4. Pass control to the Windows loader.
+
+Well, because I replaced the bootloader, the value of `PCR4` is completely ruined, which means Bitlocker won't be able to unseal its `VEK`!  
+At this point, Bitlocker actually doesn't give up but asks for a special key from the user's IT department. While that's a fascinating subject, we won't be discussing that in this blogpost.  
+The conclusion is that my Bootkit does *not* beat Bitlocker, which is a good thing for end-user privacy!  
+At this point, you might have some ideas on how to bypass those restrictions. Here are some common ones and why they do not work:
+
+### Attempt 1: replaying the PCR values
+One idea you might have is straight-forward - we might have intimate knowledge about the boot process and the buffers extneded in each PCR value, so, we could perform the same calculation and get to the "desired" PCR values!  
+While that approah makes a lot of sense, it doesn't work because there are no known ways of resetting the PCR values back to zero without power-cycling the TPM, which in principle cannot be done without a CPU reboot.  
+There are some interesting nuances about Windows hibernation and S3 sleep mode: when coming back from hibernation, there is a way to set the PCR values to a specific values, but it can only be done *once* - TPM will block further attempts to do so until the next time it power-cycles or goes to sleep mode.
+
+### Attempt 2: vTPM
+One other idea would be fooling Windows enough and implement a TPM in software. That works in a sense that you can set arbitrary PCR values, but since your software TPM doesn't have the `VEK` or any secret, this fails.  
+That approach *does* work, however, if you already implemented your vTPM when installing Bitlocker itself, which is a huge assumption (and an overkill anyway - there are easier ways to achieve the same effect, e.g. just saving the plaintext `VEK` somewhere).
+
+### Attempt 3: VEK extraction
+The values on the TPM are encrypted with a key fused to the TPM chip and unique, so you cannot extract the `VEK` from the TPM.  
+I do want to emphasize the `VEK` is used bit Bitlocker, and therefore resides in RAM (after unsealing). Therefore, things like [DMA attacks](https://en.wikipedia.org/wiki/DMA_attack) on Bitlocker do work, but using DMA attacks commonly requires physical access to a device so I will consider it out-of-scope for this blogpost.

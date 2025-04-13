@@ -1,6 +1,6 @@
 # TPM vs. Bootkit
 Last time [I explained](https://github.com/yo-yo-yo-jbo/bootkit_anatomy/) how Bootkits work.  
-This time I want to convince you that all is not lost, and talk about what TPM does to help the situation, including how Bitlocker uses it.
+This time I want to convince you that all is not lost, and talk about what TPM does to help the situation, including how [Bitlocker](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/) uses it.
 
 ## TPM at a highlevel
 The [Trusted Platform Module (TPM)](https://en.wikipedia.org/wiki/Trusted_Platform_Module) is a dedicated hardware component designed to provide cryptographic functions and platform integrity assurances.  
@@ -57,7 +57,8 @@ Note the API gets the buffer *as is* (`DataToHash` and `DataLength`) rather than
 
 ### Sealing and unsealing
 One incredible ability TPM has is the ability to perform *sealing* and *unsealing* of secrets and tie that to PCR values.  
-Here is an example that shows how it's done:
+In the following code, we're going to use the [TPM2-tss](https://github.com/tpm2-software/tpm2-tss/) APIs, but those are basically wrappers for the "raw" TPM2 interface.  
+Here is an example that shows how *sealing* is done:
 
 ```c
 // Required headers
@@ -196,4 +197,9 @@ void unseal_data(ESYS_CONTEXT *esys_ctx, ESYS_TR parent_handle,
 2. Now we call `Esys_Unseal` to unseal the data. The most important thing is this - *unsealing fails if the PCR selection and the values themselves mismatch*.
 
 That is a very powerful thing - this means unsealing data now is tightly bound to the boot order, configuration, and generally - buffers controlled by the firmware.  
-We'll see how Bitlocker uses that.
+We'll see how Bitlocker uses that!
+
+### Bitlocker and sealing
+[Bitlocker](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/) uses something called `VEK`, which stands for `Volume Encryption Key`.  
+It is a symmetric [AES key](https://github.com/yo-yo-yo-jbo/crypto_terminology/) used by BitLocker to actually encrypt and decrypt sectors on the disk.  
+Each BitLocker-encrypted volume has its own `VEK` and it's different on every machine. The magic? It's *sealed* in the TPM!
